@@ -33,10 +33,10 @@ class TornadoWebSocketClient(WebSocketBaseClient):
         """
         WebSocketBaseClient.__init__(self, url, protocols, extensions,
                                      ssl_options=ssl_options, headers=headers)
-        self.ssl_options["do_handshake_on_connect"] = False
         if self.scheme == "wss":
-            self.sock = ssl.wrap_socket(self.sock, **self.ssl_options)
-            self.io = iostream.SSLIOStream(self.sock, io_loop)
+            self.sock = ssl.wrap_socket(self.sock, do_handshake_on_connect=False, **self.ssl_options)
+            self._is_secure = True
+            self.io = iostream.SSLIOStream(self.sock, io_loop, ssl_options=self.ssl_options)
         else:
             self.io = iostream.IOStream(self.sock, io_loop)
         self.io_loop = io_loop
@@ -118,7 +118,7 @@ class TornadoWebSocketClient(WebSocketBaseClient):
         if self.stream.closing:
             code, reason = self.stream.closing.code, self.stream.closing.reason
         self.closed(code, reason)
-        self._cleanup()
+        self.stream._cleanup()
 
     def close_connection(self):
         """

@@ -16,19 +16,20 @@ Its usage is rather simple:
 
 """
 import logging
-import sys
 
 import gevent
 from gevent.pywsgi import WSGIHandler, WSGIServer as _WSGIServer
-from gevent.pool import Group
+from gevent.pool import Pool
 
 from ws4py import format_addresses
 from ws4py.server.wsgiutils import WebSocketWSGIApplication
+
 
 logger = logging.getLogger('ws4py')
 
 __all__ = ['WebSocketWSGIHandler', 'WSGIServer',
            'GEventWebSocketPool']
+
 
 class WebSocketWSGIHandler(WSGIHandler):
     """
@@ -43,25 +44,26 @@ class WebSocketWSGIHandler(WSGIHandler):
     def run_application(self):
         upgrade_header = self.environ.get('HTTP_UPGRADE', '').lower()
         if upgrade_header:
-            try:
-                # Build and start the HTTP response
-                self.environ['ws4py.socket'] = self.socket or self.environ['wsgi.input'].rfile._sock
-                self.result = self.application(self.environ, self.start_response) or []
-                self.process_result()
-            except:
-                raise
-            else:
-                del self.environ['ws4py.socket']
-                self.socket = None
-                self.rfile.close()
+            # Build and start the HTTP response
+            self.environ['ws4py.socket'] = self.socket or self.environ['wsgi.input'].rfile._sock
+            self.result = self.application(self.environ, self.start_response) or []
+            self.process_result()
+            del self.environ['ws4py.socket']
+            self.socket = None
+            self.rfile.close()
 
-                ws = self.environ.pop('ws4py.websocket')
-                if ws:
-                    self.server.pool.track(ws)
+            ws = self.environ.pop('ws4py.websocket', None)
+            if ws:
+                ws_greenlet = self.server.pool.track(ws)
+                # issue #170
+                # in gevent 1.1 socket will be closed once application returns
+                # so let's wait for websocket handler to finish
+                ws_greenlet.join()
         else:
             gevent.pywsgi.WSGIHandler.run_application(self)
 
-class GEventWebSocketPool(Group):
+
+class GEventWebSocketPool(Pool):
     """
     Simple pool of bound websockets.
     Internally it uses a gevent group to track
@@ -85,7 +87,8 @@ class GEventWebSocketPool(Group):
                 pass
             finally:
                 self.discard(greenlet)
-                
+
+
 class WSGIServer(_WSGIServer):
     handler_class = WebSocketWSGIHandler
 
@@ -106,8 +109,8 @@ class WSGIServer(_WSGIServer):
         self.pool.clear()
         _WSGIServer.stop(self, *args, **kwargs)
 
+
 if __name__ == '__main__':
-    import os
 
     from ws4py import configure_logger
     configure_logger()
