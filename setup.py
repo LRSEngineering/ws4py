@@ -5,7 +5,7 @@ import sys
 try:
     from setuptools import setup
 except ImportError:
-    from distutils.core import setup
+    from setuptools import setup
 from distutils.command.build_py import build_py
 
 class buildfor2or3(build_py):
